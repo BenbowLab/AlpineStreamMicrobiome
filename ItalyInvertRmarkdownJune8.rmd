@@ -1,0 +1,1625 @@
+---
+title: "AlpineStreamInsectMicrobiome"
+author: "JReceveur"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+---
+  
+  ```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=14, fig.height=10)
+knitr::opts_chunk$set(fig.align="center")
+```
+
+
+```{r ,warning=FALSE,include=FALSE}
+
+library(vegan)
+library(MASS)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(magrittr)
+library(scales)
+library(grid)
+library(reshape2)
+library(phyloseq)
+library(randomForest)
+library(knitr)
+library(ape)
+library(ggpubr)
+library(multcompView)
+library(Rmisc)
+
+set.seed(27)
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#000000","#CC79A7","#E12D00")
+theme_set(theme_bw(base_size = 18)+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()))
+biom=import_biom("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\ItalyInvert2018WTax.biom",parseFunction= parse_taxonomy_greengenes)
+#tax_table(biom) <- tax_table(biom)[,-c(5:10,14)]#remove dummy ranks
+
+metadata=read.csv("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\ItalyInvertMetadataWDiversity11.27.18.csv",header = TRUE)
+head(metadata)
+
+tree=read_tree("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\ItalyInvert11.29.18Tree.nwk")
+
+sampdat=sample_data(metadata)
+sample_names(sampdat)=metadata$id
+physeq=merge_phyloseq(biom,sampdat,tree)
+physeq=rarefy_even_depth(physeq, 3000, replace = TRUE, trimOTUs = TRUE, verbose = TRUE,rngseed = TRUE)
+```
+
+##Data overview{.tabset}
+###Sequencing
+```{r}
+physeq
+
+```
+
+###Metadata
+```{r}
+Trtdata <- ddply(metadata, c("Sampling_station", "FFG","Taxon_name"), summarise,
+                 N    = length(id),
+                 meanWeight = mean(Mass),
+                 sd   = sd(Mass),
+                 se   = sd / sqrt(N)
+)
+Trtdata
+ggplot(metadata,aes(x=Sampling_station,y=Mass,fill=Sampling_station))+geom_boxplot()+ #Write in labels from posthoc
+  scale_fill_manual(values=cbPalette)+xlab("")+ylab("Mass (mg)")+labs(fill="FFG")+guides(fill=FALSE)+facet_wrap(~FFG,scales = "free_y")#+theme(axis.text.x = element_text(angle = 45, hjust = 1))+#+geom_text(aes(x=FFG, y=shannon+se+1,label=Letters$Letters2), position=position_dodge(width=0.9), size=8,color="black")#+ 
+head(metadata)
+
+metadataStatsSubset<- subset(metadata,FFG!="Predator")
+
+metadataStatsSubset<- subset(metadataStatsSubset,FFG!="Filterer")
+metadataStatsSubset
+print("Mass (mg)~ Sampling_station*FFG, method=ANOVA")
+av=aov( Mass~ Sampling_station*FFG, data=metadataStatsSubset)
+summary(av)
+
+print("(Since the interaction between sampling station and FFG was signinficant below are t-tests split out by FFG/n Mass (mg) ~Sampling-station (grouped by FFG, FDR correction)")
+
+Scrapers<-subset(metadataStatsSubset, FFG=="Scraper")
+t.test( Mass~ Sampling_station, data=Scrapers)
+
+
+Shredders<-subset(metadataStatsSubset, FFG=="Shredder")
+t.test( Mass~ Sampling_station, data=Shredders)
+
+
+
+
+#compare_means(Mass_.mg. ~ Sampling_station,group.by = "FFG", data = metadata, p.adjust.method = "fdr",method="t.test")
+
+```
+
+
+##Alpha Diversity {.tabset}
+###Observed Species
+
+```{r}
+plot_richness(physeq, x="FFG",color="FFG", measures=c("Observed"))+geom_boxplot(aes(x=FFG, y=value, color=FFG), alpha=0.05)+ylab("Observed Species")+geom_point(size=3)+guides(fill=FALSE)
+
+
+```
+
+###Shannon Diversity
+```{r}
+
+av=kruskal.test( shannon~ FFG, data=metadataStatsSubset) #fig.width = 8, fig.height = 8 for line above to change size
+av2=kruskal.test( shannon~ Sampling_station, data=metadataStatsSubset) 
+av
+av2
+posthoc<-compare_means(shannon ~ FFG, data = metadataStatsSubset, p.adjust.method = "fdr")
+
+Hyphenated<-as.character(paste0(posthoc$group1,"-",posthoc$group2))
+difference<-posthoc$p.format
+names(difference)<-Hyphenated
+
+Letters<-multcompLetters(difference)
+
+stats<-summarySE(metadataStatsSubset,measurevar="shannon",groupvars=c("FFG",na.rm=TRUE))
+ggplot(stats,aes(x=FFG,y=shannon,fill=FFG))+geom_text(aes(x=FFG, y=shannon+se+1,label=Letters$Letters), position=position_dodge(width=0.9), size=8,color="black")+ geom_bar(stat="identity")+  geom_errorbar(aes(ymin=shannon-se,ymax=shannon+se),color="black") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+ scale_fill_manual(values=cbPalette)+xlab("")+ylab("Shannon Diversity")+labs(fill="FFG")+guides(fill=FALSE)#+ theme(legend.justification=c(0.05,0.95), legend.position=c(0.05,0.95))
+
+stats2<-summarySE(metadata,measurevar="shannon",groupvars=c("FFG","Sampling_station",na.rm=TRUE))
+posthoc2<-compare_means(shannon ~ FFG, data = metadataStatsSubset, p.adjust.method = "fdr",group.by = "Sampling_station")
+
+
+ggplot(metadata,aes(x=FFG,y=shannon,fill=FFG))+geom_boxplot() +#Write in labels from posthoc+geom_col()+geom_errorbar(aes(ymin=shannon-se,ymax=shannon+se),color="black")+
+ scale_fill_manual(values=cbPalette)+xlab("")+ylab("Shannon Diversity")+labs(fill="FFG")+guides(fill=FALSE)+facet_wrap(~Sampling_station)#+geom_text(aes(x=FFG, y=shannon+se+1,label=Letters$Letters2), position=position_dodge(width=0.9), size=8,color="black")#+ 
+
+ggplot(metadata,aes(x=Sampling_station,y=shannon,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+xlab("")+ylab("Shannon Diversity")+labs(fill="FFG")+guides(fill=FALSE)+facet_wrap(~FFG)#+geom_text(aes(x=FFG, y=shannon+se+1,label=Letters$Letters2), position=position_dodge(width=0.9), size=8,color="black")#+ 
+
+
+
+av
+posthoc
+Letters
+stats
+
+posthoc2
+stats2
+av2
+
+```
+
+###AlphaDivSplitByFFG
+```{r}
+
+print("Scrapers")
+Scrapers<-subset(metadataStatsSubset, FFG=="Scraper")
+shapiro.test(Scrapers$shannon)
+shapiro.test(Scrapers$faith_pd)
+t.test( shannon~ Sampling_station, data=Scrapers)
+t.test( faith_pd~ Sampling_station, data=Scrapers)
+
+kruskal.test( shannon~ Sampling_station, data=Scrapers)
+kruskal.test( faith_pd~ Sampling_station, data=Scrapers)
+print("Shredders")
+Shredders<-subset(metadataStatsSubset, FFG=="Shredder")
+t.test(shannon~Sampling_station,data=Shredders)
+t.test( faith_pd~ Sampling_station, data=Shredders)
+
+kruskal.test(shannon~Sampling_station,data=Shredders)
+kruskal.test( faith_pd~ Sampling_station, data=Shredders)
+
+```
+
+###AlphaDivSplitByStation
+```{r}
+
+print("Ostana")
+Ostana<-subset(metadata, Sampling_station=="Ostana")
+OstanaStatAlpha<-subset(Ostana,FFG!="Predator")
+shapiro.test(OstanaStatAlpha$shannon)
+shapiro.test(OstanaStatAlpha$faith_pd)
+
+kruskal.test( shannon~ FFG, data=OstanaStatAlpha)
+compare_means(shannon ~ FFG, data = OstanaStatAlpha, p.adjust.method = "fdr")
+
+kruskal.test( faith_pd~ FFG, data=OstanaStatAlpha)
+compare_means(faith_pd ~ FFG, data = OstanaStatAlpha, p.adjust.method = "fdr")
+
+print("PDR")
+PDRStatAlpha<-subset(metadata, Sampling_station!="Ostana")
+kruskal.test( shannon~ FFG, data=PDRStatAlpha)
+compare_means(shannon ~ FFG, data = PDRStatAlpha, p.adjust.method = "fdr")
+
+kruskal.test( faith_pd~ FFG, data=PDRStatAlpha)
+compare_means(faith_pd ~ FFG, data = PDRStatAlpha, p.adjust.method = "fdr")
+
+
+posthoc<-compare_means(shannon ~ FFG, data = OstanaStatAlpha, p.adjust.method = "fdr")
+
+Hyphenated<-as.character(paste0(posthoc$group1,"-",posthoc$group2))
+difference<-posthoc$p.format
+names(difference)<-Hyphenated
+
+Letters<-multcompLetters(difference)
+
+stats<-summarySE(OstanaStatAlpha,measurevar="shannon",groupvars=c("FFG",na.rm=TRUE))
+ggplot(stats,aes(x=FFG,y=shannon,fill=FFG))+geom_text(aes(x=FFG, y=shannon+se+1,label=Letters$Letters), position=position_dodge(width=0.9), size=8,color="black")+ geom_bar(stat="identity")+  geom_errorbar(aes(ymin=shannon-se,ymax=shannon+se),color="black") + scale_fill_manual(values=cbPalette)+xlab("")+ylab("Shannon Diversity (Ostana)")+labs(fill="FFG")+guides(fill=FALSE)#+ theme(legend.justification=c(0.05,0.95), legend.position=c(0.05,0.95))
+
+
+posthoc<-compare_means(shannon ~ FFG, data = PDRStatAlpha, p.adjust.method = "fdr")
+
+Hyphenated<-as.character(paste0(posthoc$group1,"-",posthoc$group2))
+difference<-posthoc$p.format
+names(difference)<-Hyphenated
+
+Letters<-multcompLetters(difference)
+
+
+stats<-summarySE(PDRStatAlpha,measurevar="shannon",groupvars=c("FFG",na.rm=TRUE))
+ggplot(stats,aes(x=FFG,y=shannon,fill=FFG))+geom_text(aes(x=FFG, y=shannon+se+1,label=Letters$Letters), position=position_dodge(width=0.9), size=8,color="black")+ geom_bar(stat="identity")+  geom_errorbar(aes(ymin=shannon-se,ymax=shannon+se),color="black") +  scale_fill_manual(values=cbPalette)+xlab("")+ylab("Shannon Diversity (PDR)")+labs(fill="FFG")+guides(fill=FALSE)#+ theme(legend.justification=c(0.05,0.95), legend.position=c(0.05,0.95))
+
+posthoc<-compare_means(faith_pd ~ FFG, data = OstanaStatAlpha, p.adjust.method = "fdr")
+
+Hyphenated<-as.character(paste0(posthoc$group1,"-",posthoc$group2))
+difference<-posthoc$p.format
+names(difference)<-Hyphenated
+
+Letters<-multcompLetters(difference)
+
+stats<-summarySE(OstanaStatAlpha,measurevar="faith_pd",groupvars=c("FFG",na.rm=TRUE))
+ggplot(stats,aes(x=FFG,y=faith_pd,fill=FFG))+geom_text(aes(x=FFG, y=faith_pd+se+1,label=Letters$Letters), position=position_dodge(width=0.9), size=8,color="black")+ geom_bar(stat="identity")+  geom_errorbar(aes(ymin=faith_pd-se,ymax=faith_pd+se),color="black") +  scale_fill_manual(values=cbPalette)+xlab("")+ylab("Faith's PD (Ostana)")+labs(fill="FFG")+guides(fill=FALSE)#+ theme(legend.justification=c(0.05,0.95), legend.position=c(0.05,0.95))
+
+
+posthoc<-compare_means(faith_pd ~ FFG, data = PDRStatAlpha, p.adjust.method = "fdr")
+
+Hyphenated<-as.character(paste0(posthoc$group1,"-",posthoc$group2))
+difference<-posthoc$p.format
+names(difference)<-Hyphenated
+
+Letters<-multcompLetters(difference)
+
+stats<-summarySE(PDRStatAlpha,measurevar="faith_pd",groupvars=c("FFG",na.rm=TRUE))
+ggplot(stats,aes(x=FFG,y=faith_pd,fill=FFG))+geom_text(aes(x=FFG, y=faith_pd+se+1,label=Letters$Letters), position=position_dodge(width=0.9), size=8,color="black")+ geom_bar(stat="identity")+  geom_errorbar(aes(ymin=faith_pd-se,ymax=faith_pd+se),color="black") +  scale_fill_manual(values=cbPalette)+xlab("")+ylab("Faith's PD (PDR)")+labs(fill="FFG")+guides(fill=FALSE)#+ theme(legend.justification=c(0.05,0.95), legend.position=c(0.05,0.95))
+
+
+```
+
+###Faith's PD
+```{r, FaithPD}
+av=kruskal.test( faith_pd~ FFG, data=metadataStatsSubset) 
+av2=kruskal.test( faith_pd~ Sampling_station, data=metadataStatsSubset) 
+av
+av2
+posthoc<-compare_means(faith_pd ~ FFG, data = metadataStatsSubset, p.adjust.method = "fdr")
+
+
+Hyphenated<-as.character(paste0(posthoc$group1,"-",posthoc$group2))
+difference<-posthoc$p.format
+names(difference)<-Hyphenated
+
+Letters<-multcompLetters(difference)
+stats<-summarySE(metadata,measurevar="faith_pd",groupvars=c("FFG",na.rm=TRUE))
+ggplot(metadata,aes(x=FFG,y=faith_pd,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+xlab("")+ylab("Faith's PD")+labs(fill="FFG")#+ theme(legend.justification=c(0.05,0.95), legend.position=c(0.05,0.95))geom_text(aes(x=FFG, y=faith_pd+se+2,label=Letters$Letters), position=position_dodge(width=0.9), size=8,color="black")+ 
+
+stats2<-summarySE(metadata,measurevar="faith_pd",groupvars=c("FFG","Sampling_station",na.rm=TRUE))
+posthoc2<-compare_means(faith_pd ~ FFG, data = metadataStatsSubset, p.adjust.method = "fdr",group.by = "Sampling_station")
+
+
+ggplot(metadata,aes(x=FFG,y=faith_pd,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+xlab("")+ylab("Faith PD")+labs(fill="FFG")+guides(fill=FALSE)+facet_wrap(~Sampling_station,scales = "free_x")+ theme(axis.text.x = element_text(angle = 45, hjust = 1))#+geom_text(aes(x=FFG, y=shannon+se+1,label=Letters$Letters2), position=position_dodge(width=0.9), size=8,color="black")#+ 
+ggplot(metadata,aes(x=Sampling_station,y=faith_pd,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+xlab("")+ylab("Faith's PD")+labs(fill="FFG")+guides(fill=FALSE)+facet_wrap(~FFG)#+geom_text(aes(x=FFG, y=shannon+se+1,label=Letters$Letters2), position=position_dodge(width=0.9), size=8,color="black")#+ 
+
+
+
+av
+
+posthoc
+Letters
+stats
+
+posthoc2
+av2
+
+```
+
+##Taxa Plots {.tabset}
+
+```{r filteringForAll}
+
+
+GPr  = transform_sample_counts(physeq, function(x) x / sum(x) ) #transform samples based on relative abundance
+GPr = filter_taxa(GPr, function(x) mean(x) > 1e-5, TRUE)
+PhylumAll=tax_glom(GPr, "Phylum")
+
+PhylumLevel = filter_taxa(PhylumAll, function(x) mean(x) > 1e-2, TRUE) #filter out any taxa lower tha 0.1%
+FamilyAll=tax_glom(GPr,"Family")
+FamilyLevel = filter_taxa(FamilyAll, function(x) mean(x) > 2e-2, TRUE) #filter out any taxa lower tha 1%
+GenusAll=tax_glom(GPr,"Genus")
+GenusLevel = filter_taxa(GenusAll, function(x) mean(x) > 2e-2, TRUE) #filter out any taxa lower tha 1%
+
+```
+
+###Phylum Level
+
+
+The top 7 phyla across all samples are given in the table below
+```{r PhylumRA, warning=FALSE}
+df <- psmelt(PhylumLevel)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Phylum", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+df2 <- psmelt(PhylumAll)
+df2$Abundance<-df2$Abundance*100
+PhylumAll<-ddply(df2, c("Phylum"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+PhylumSorted<-PhylumAll[order(-PhylumAll$mean),]
+PhylumSorted[1:7,]
+
+PhylumAll2<-ddply(df2, c("Phylum","FFG"), summarise, #For Rel abu tabs
+                  N    = length(Abundance),
+                  mean = mean(Abundance),
+                  sd   = sd(Abundance),
+                  se   = sd / sqrt(N)
+)
+PhylumAll2
+```
+
+
+
+```{r TreatmentPlot5}
+
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = Phylum),colour="black", stat="identity")+xlab("FFG")+ylab("Relative Abundance (> 1%)")+theme(axis.title.x=element_blank())+ theme(axis.text.x = element_text(angle = 45, hjust = 1))+ scale_fill_manual(values=cbPalette)
+cdataplot#+  scale_x_discrete(labels=c("0 hrs", "24 hrs", "48 hrs","72 hrs"))
+#position = "fill"#+geom_errorbar(aes(ymin=mean-se,ymax=mean+se),color="black",width=1)+geom_line(size=1.5,linetype="dashed")+geom_point(size=6)+ylab(
+Trtdata2 <- ddply(df, c("Phylum", "FFG","Sampling_station"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+dfStats<-subset(df, FFG!="Predator")
+dfStats<-subset(dfStats,FFG!="Filterer")
+cdataplot2=ggplot(Trtdata2, aes(x=FFG,y=mean))+geom_bar(aes(fill = Phylum),colour="black", stat="identity")+xlab("FFG")+ylab("Relative Abundance (> 1%)")+theme(axis.title.x=element_blank())+ theme(axis.text.x = element_text(angle = 45, hjust = 1))+ scale_fill_manual(values=cbPalette)+facet_wrap(~Sampling_station,scales = "free_x")
+cdataplot2
+
+########
+compare_means(Abundance ~ FFG, data = df, group.by = "Phylum", p.adjust.method = "fdr",method="kruskal.test")
+Means<-compare_means(Abundance ~ FFG, data = df, group.by = "Phylum", p.adjust.method = "fdr")
+
+
+Trtdata <- ddply(df, c("Phylum", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+SigList<-length(unique(Trtdata$Phylum))
+for (i in levels(Means$Phylum)){
+  Tax<-i
+  TaxAbundance<-subset(Means,Phylum==i )
+  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+  difference<-TaxAbundance$p
+  names(difference)<-Hyphenated
+  Letters<-multcompLetters(difference)
+  #print(Letters)
+  SigList[i]<-Letters
+  
+}
+vec<-unlist(SigList)
+vec<-vec[-1]
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Family)+xlab("FFG")+ylab("Relative Abundance (> 1%)") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Phylum)+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+geom_text(aes(x=FFG, y=mean+se+10,label=vec))  +scale_fill_manual(values=cbPalette)
+cdataplot
+
+
+head(Trtdata)
+
+dfStatsPlot<-subset(Trtdata,Phylum!="Actinobacteria"&Phylum!= "Verrucomicrobia")
+#vec<-c("a","b","a","b","a","b","a","b","a","b")
+dfStatsPlot # Only show significant taxa 
+cdataplot=ggplot(dfStatsPlot, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Family)+xlab("FFG")+ylab("Relative Abundance (> 1%)") + theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+theme(axis.title.x=element_blank())+facet_wrap(~Phylum)+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+#geom_text(aes(x=FFG, y=mean+se+10,label=vec))+
+  scale_fill_manual(values=cbPalette)+theme(legend.justification=c(0.05,0.95), legend.position=c(0.7,0.4))
+cdataplot
+
+
+```
+
+```{r,warning=FALSE}
+#NComparisons<-length(unique(metadata$FFG))*length(unique(Trtdata$Phylum))
+#SigList<-length(unique(Trtdata$Phylum))
+#SigLetters2<-vector(length=NComparisons)
+#vec<-unlist(lst)
+Means=compare_means(Abundance ~ FFG, data = dfStats, group.by = "Phylum", p.adjust.method = "fdr")
+MeansStation=compare_means(Abundance ~ Sampling_station, data = dfStats, group.by = "Phylum", p.adjust.method = "fdr")
+
+Means
+MeansStation
+
+
+Means<-compare_means(Abundance ~ FFG, data = dfStats, group.by = "Phylum", p.adjust.method = "fdr")
+
+
+Trtdata <- ddply(dfStats, c("Phylum", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+SigList<-length(unique(Trtdata$Phylum))
+for (i in levels(Means$Phylum)){
+  Tax<-i
+  TaxAbundance<-subset(Means,Phylum==i )
+  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+  difference<-TaxAbundance$p
+  names(difference)<-Hyphenated
+  Letters<-multcompLetters(difference)
+  #print(Letters)
+  SigList[i]<-Letters
+  
+}
+vec<-unlist(SigList)
+vec<-vec[-1]
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Family)+xlab("FFG")+ylab("Relative Abundance (> 1%)") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Phylum)+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+geom_text(aes(x=FFG, y=mean+se+5,label=vec))+scale_fill_manual(values=cbPalette)
+cdataplot
+
+#######
+
+
+```
+
+###Split by Station
+```{r}
+df <- psmelt(PhylumLevel)
+df$Abundance=df$Abundance*100
+dfOstana<-subset(df,Sampling_station =="Ostana")
+dfStatsPDR<-subset(df,Sampling_station!="Ostana")
+
+
+dfStatsOstana<-subset(dfOstana,FFG!="Predator")
+
+print("Ostana")
+compare_means(Abundance ~ FFG, data = dfStatsOstana, group.by = "Phylum", p.adjust.method = "fdr",method="kruskal.test")
+
+Means<-compare_means(Abundance ~ FFG, data = dfStatsOstana, group.by = "Phylum", p.adjust.method = "fdr")
+
+keeps <- c("Phylum","group1","group2","p.adj","method","p.signif")
+keeps=Means[keeps]
+
+test3 <- list('Phylum'= keeps$Phylum,'group1'=keeps$group1,'group2'= keeps$group2,'p.adj'=keeps$p.adj)
+test3= as.data.frame(test3)
+FilteredResults<-test3[!(test3$p.adj>0.1),]            
+FilteredResults
+print("Pian della Regina")
+
+Means<-compare_means(Abundance ~ FFG, data = dfStatsPDR, group.by = "Phylum", p.adjust.method = "fdr")
+
+keeps <- c("Phylum","group1","group2","p.adj","method","p.signif")
+keeps=Means[keeps]
+
+test3 <- list('Phylum'= keeps$Phylum,'group1'=keeps$group1,'group2'= keeps$group2,'p.adj'=keeps$p.adj)
+test3= as.data.frame(test3)
+FilteredResults<-test3[!(test3$p.adj>0.1),]            
+FilteredResults
+
+#########
+
+############
+ggplot(dfOstana, aes(x=FFG,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+facet_wrap(~Phylum)+ylab("Relative Abundance Ostana(>1%)")
+
+ggplot(dfStatsPDR, aes(x=FFG,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+facet_wrap(~Phylum)+ylab("Relative Abundance PDR(>1%)")
+
+
+
+print("Family level")
+
+df <- psmelt(FamilyLevel)
+df$Abundance=df$Abundance*100
+dfOstana<-subset(df,Sampling_station =="Ostana")
+dfStatsPDR<-subset(df,Sampling_station!="Ostana")
+
+dfStatsOstana<-subset(dfOstana,FFG!="Predator")
+
+print("Ostana")
+compare_means(Abundance ~ FFG, data = dfStatsOstana, group.by = "Family", p.adjust.method = "fdr",method="kruskal.test")
+Means<-compare_means(Abundance ~ FFG, data = dfStatsOstana, group.by = "Family", p.adjust.method = "fdr")
+
+keeps <- c("Family","group1","group2","p.adj","method","p.signif")
+keeps=Means[keeps]
+
+test3 <- list('Family'= keeps$Family,'group1'=keeps$group1,'group2'= keeps$group2,'p.adj'=keeps$p.adj)
+test3= as.data.frame(test3)
+FilteredResults<-test3[!(test3$p.adj>0.1),]            
+FilteredResults
+
+print("Pian della Regina")
+
+compare_means(Abundance ~ FFG, data = dfStatsPDR, group.by = "Family", p.adjust.method = "fdr",method="kruskal.test")
+
+Means<-compare_means(Abundance ~ FFG, data = dfStatsPDR, group.by = "Family", p.adjust.method = "fdr")
+
+keeps <- c("Family","group1","group2","p.adj","method","p.signif")
+keeps=Means[keeps]
+
+test3 <- list('Family'= keeps$Family,'group1'=keeps$group1,'group2'= keeps$group2,'p.adj'=keeps$p.adj)
+test3= as.data.frame(test3)
+FilteredResults<-test3[!(test3$p.adj>0.1),]            
+FilteredResults
+
+
+ggplot(dfOstana, aes(x=FFG,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+facet_wrap(~Family)+ylab("Relative Abundance Ostana(>2%)")
+
+ggplot(dfStatsPDR, aes(x=FFG,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+facet_wrap(~Family)+ylab("Relative Abundance PDR(>2%)")
+
+
+print("Genus Level")
+df <- psmelt(GenusLevel)
+df$Abundance=df$Abundance*100
+dfOstana<-subset(df,Sampling_station =="Ostana")
+dfStatsPDR<-subset(df,Sampling_station!="Ostana")
+
+
+dfStatsOstana<-subset(dfOstana,FFG!="Predator")
+
+print("Ostana")
+compare_means(Abundance ~ FFG, data = dfStatsOstana, group.by = "Genus", p.adjust.method = "fdr",method="kruskal.test")
+
+compare_means(Abundance ~ FFG, data = dfStatsOstana, group.by = "Genus", p.adjust.method = "fdr")
+
+print("Pian della Regina")
+
+compare_means(Abundance ~ FFG, data = dfStatsPDR, group.by = "Genus", p.adjust.method = "fdr",method="kruskal.test")
+compare_means(Abundance ~ FFG, data = dfStatsPDR, group.by = "Genus", p.adjust.method = "fdr")
+
+ggplot(dfOstana, aes(x=FFG,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+facet_wrap(~Genus)+ylab("Relative Abundance Ostana(>2%)")
+
+ggplot(dfStatsPDR, aes(x=FFG,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+facet_wrap(~Genus)+ylab("Relative Abundance PDR(>2%)")
+```
+
+
+###Split by FFG
+```{r}
+df <- psmelt(PhylumLevel)
+df$Abundance=df$Abundance*100
+dfShredders<-subset(df,FFG =="Shredder")
+dfScrapers<-subset(df,FFG == "Scraper")
+
+print("Shredders")
+
+compare_means(Abundance ~ Sampling_station, data = dfShredders, group.by = "Phylum", p.adjust.method = "fdr",method="kruskal.test")
+
+Means<-compare_means(Abundance ~ Sampling_station, data = dfShredders, group.by = "Phylum", p.adjust.method = "fdr")
+
+keeps <- c("Phylum","group1","group2","p","method","p.signif")
+keeps=Means[keeps]
+
+test3 <- list('Phylum'= keeps$Phylum,'group1'=keeps$group1,'group2'= keeps$group2,'p'=keeps$p)
+test3= as.data.frame(test3)
+FilteredResults<-test3[!(test3$p>0.1),]            
+FilteredResults
+print("Scrapers")
+
+compare_means(Abundance ~ Sampling_station, data = dfScrapers, group.by = "Phylum", p.adjust.method = "fdr",method="kruskal.test")
+
+Means<-compare_means(Abundance ~ Sampling_station, data = dfScrapers, group.by = "Phylum", p.adjust.method = "fdr")
+
+keeps <- c("Phylum","group1","group2","p","method","p.signif")
+keeps=Means[keeps]
+
+test3 <- list('Phylum'= keeps$Phylum,'group1'=keeps$group1,'group2'= keeps$group2,'p'=keeps$p)
+test3= as.data.frame(test3)
+FilteredResults<-test3[!(test3$p>0.1),]            
+FilteredResults
+
+ggplot(dfShredders, aes(x=Sampling_station,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+facet_wrap(~Phylum)+ylab("Relative Abundance Shredders(>1%)")
+
+ggplot(dfScrapers, aes(x=Sampling_station,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+facet_wrap(~Phylum)+ylab("Relative Abundance Scrapers (>1%)")
+
+
+############
+df <- psmelt(FamilyLevel)
+df$Abundance=df$Abundance*100
+dfShredders<-subset(df,FFG =="Shredder")
+dfScrapers<-subset(df,FFG == "Scraper")
+
+Means<-compare_means(Abundance ~ Sampling_station, data = dfShredders, group.by = "Family", p.adjust.method = "fdr")
+
+keeps <- c("Family","group1","group2","p","method","p.signif")
+keeps=Means[keeps]
+
+test3 <- list('Family'= keeps$Family,'group1'=keeps$group1,'group2'= keeps$group2,'p'=keeps$p)
+test3= as.data.frame(test3)
+FilteredResults<-test3[!(test3$p>0.1),]            
+FilteredResults
+print("Scrapers")
+
+compare_means(Abundance ~ Sampling_station, data = dfScrapers, group.by = "Family", p.adjust.method = "fdr",method="kruskal.test")
+
+Means<-compare_means(Abundance ~ Sampling_station, data = dfScrapers, group.by = "Family", p.adjust.method = "fdr")
+
+keeps <- c("Family","group1","group2","p","method","p.signif")
+keeps=Means[keeps]
+
+test3 <- list('Family'= keeps$Family,'group1'=keeps$group1,'group2'= keeps$group2,'p'=keeps$p)
+test3= as.data.frame(test3)
+FilteredResults<-test3[!(test3$p>0.1),]            
+FilteredResults
+
+ggplot(dfShredders, aes(x=Sampling_station,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+facet_wrap(~Family)+ylab("Relative Abundance Shredders(>1%)")
+
+ggplot(dfScrapers, aes(x=Sampling_station,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_manual(values=cbPalette)+facet_wrap(~Family)+ylab("Relative Abundance Scrapers (>1%)")
+
+
+```
+
+
+
+###Family Level
+
+The top 5 Families across all samples are given in the table below
+```{r Summarizing2,warning=FALSE}
+df <- psmelt(FamilyLevel)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Family", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+dfStats<-subset(df,FFG!="Predator")
+dfStats<-subset(dfStats,FFG!="Filterer")
+df2 <- psmelt(FamilyAll)
+df2$Abundance<-df2$Abundance*100
+FamilyAll<-ddply(df2, c("Family"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+FamilySorted<-FamilyAll[order(-FamilyAll$mean),]
+#FamilySorted[1:5,]
+
+FamilyAll2<-ddply(df2, c("Family","FFG"), summarise, #For Rel abu tabs
+                  N    = length(Abundance),
+                  mean = mean(Abundance),
+                  sd   = sd(Abundance),
+                  se   = sd / sqrt(N)
+)
+FamilySorted2<-FamilyAll2[order(-FamilyAll$mean),]
+FamilySorted2
+```
+
+
+
+
+```{r TreatmentPlot,warning=FALSE}
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = Family),colour="black", stat="identity")+xlab("FFG")+ylab("Relative Abundance (> 2%)")+theme(axis.title.x=element_blank())+ theme(axis.text.x = element_text(angle = 45, hjust = 1))+ scale_fill_manual(values=cbPalette)
+cdataplot#+  scale_x_discrete(labels=c("0 hrs", "24 hrs", "48 hrs","72 hrs"))
+#position = "fill"#+geom_errorbar(aes(ymin=mean-se,ymax=mean+se),color="black",width=1)+geom_line(size=1.5,linetype="dashed")+geom_point(size=6)+ylab(
+
+Trtdata2 <- ddply(df, c("Family", "FFG","Sampling_station"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+cdataplot2=ggplot(Trtdata2, aes(x=FFG,y=mean))+geom_bar(aes(fill = Family),colour="black", stat="identity")+xlab("FFG")+ylab("Relative Abundance (> 1%)")+theme(axis.title.x=element_blank())+ theme(axis.text.x = element_text(angle = 45, hjust = 1))+ scale_fill_manual(values=cbPalette)+facet_wrap(~Sampling_station)
+cdataplot2
+
+
+########
+dfStats<-subset(df, FFG!="Predator")
+dfStats<-subset(dfStats,FFG!="Filterer")
+compare_means(Abundance ~ FFG, data = dfStats, group.by = "Family", p.adjust.method = "fdr",method="kruskal.test")# Differences between shredder and scrapers only
+
+#df<-subset(df, Family!="Aeromonadaceae"&Family!="Rhodobacteraceae"&Family!="Enterobacteriaceae")# Remove groups that were not sig by Kruksal-Wallis
+
+#df <- df[which(df$Family!="Aeromonadaceae")] #& df$Family!="Rhodobacteraceae"& df$Family!="Enterobacteriaceae"
+#df
+Means<-compare_means(Abundance ~ FFG, data = df, group.by = "Family", p.adjust.method = "fdr")
+
+
+Trtdata <- ddply(df, c("Family", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+SigList<-length(unique(Trtdata$Family))
+for (i in levels(Means$Family)){
+  Tax<-i
+  TaxAbundance<-subset(Means,Family==i )
+  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+  difference<-TaxAbundance$p
+  names(difference)<-Hyphenated
+  Letters<-multcompLetters(difference)
+  #print(Letters)
+  SigList[i]<-Letters
+  
+}
+vec<-unlist(SigList)
+vec<-vec[-1]
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Family)+xlab("FFG")+ylab("Relative Abundance (> 2%)") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Family)+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+geom_text(aes(x=FFG, y=mean+se+5,label=vec))+scale_fill_manual(values=cbPalette)
+cdataplot
+
+
+
+(Trtdata)
+TrtdataPlot<-subset(Trtdata, Family!="Aeromonadaceae"&Family!="Rhodobacteraceae"&Family!="Enterobacteriaceae"&Family!="Cytophagaceae")
+(TrtdataPlot)
+#vec<-c("a","b","a","b","a","b","a","b","a","b","a","b")
+cdataplot=ggplot(TrtdataPlot, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Family)+xlab("FFG")+ylab("Relative Abundance (> 2%)") + theme(axis.title.x=element_blank())+facet_wrap(~Family)+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+scale_fill_manual(values=cbPalette)#theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+cdataplot
+
+
+```
+
+
+
+```{r}
+
+MeansStation=compare_means(Abundance ~ Sampling_station, data = dfStats, group.by = "Family", p.adjust.method = "fdr")
+
+
+#NComparisons<-length(unique(metadata$FFG))*length(unique(Trtdata$Family))
+#SigList<-length(unique(Trtdata$Family))
+#SigLetters2<-vector(length=NComparisons)
+#vec<-unlist(lst)
+#Means=compare_means(Abundance ~ FFG, data = dfStats, group.by = "Family", p.adjust.method = "fdr")
+#for (i in levels(Means$Family)){
+#  Tax<-i
+#  TaxAbundance<-subset(Means,Family==i )
+#  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+#  difference<-TaxAbundance$p.adj
+#  names(difference)<-Hyphenated
+#  Letters<-multcompLetters(difference)
+  #print(Letters)
+#  SigList[i]<-Letters
+  
+#}
+#vec<-unlist(SigList)
+#vec<-vec[-1]
+
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Family)+xlab("FFG")+ylab("Relative Abundance (> 2%)") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Family)+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+scale_fill_manual(values=cbPalette)
+cdataplot
+#+geom_text(aes(x=FFG, y=mean+se+5,label=vec))
+
+Means=compare_means(Abundance ~ FFG, data = dfStats, 
+                    group.by = "Family", p.adjust.method = "fdr")
+keeps <- c("Family","group1","group2","p.adj","method","p.signif")
+keeps=Means[keeps]
+#keeps
+ 
+ 
+test3 <- list('Family'= keeps$Family,'group1'=keeps$group1,'group2'= keeps$group2,'p.adj'=keeps$p.adj)
+test3= as.data.frame(test3)
+FilteredResults<-test3[!(test3$p.adj>0.1),]            
+FilteredResults
+
+
+```
+
+
+###Genus level
+The top 5 genera across all samples are given in the table below
+```{r Summarizing3,warning=FALSE}
+df <- psmelt(GenusLevel)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Genus", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+df2 <- psmelt(GenusAll)
+df2$Abundance<-df2$Abundance*100
+GenusAll<-ddply(df2, c("Genus"), summarise,
+                N    = length(Abundance),
+                mean = mean(Abundance),
+                sd   = sd(Abundance),
+                se   = sd / sqrt(N)
+)
+GenusSorted<-GenusAll[order(-GenusAll$mean),]
+GenusSorted[1:5,]
+
+GenusAll2<-ddply(df2, c("Genus","FFG"), summarise, #For Rel abu tabs
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+GenusSorted2<-GenusAll2[order(-GenusAll$mean),]
+dfStats<-subset(df,FFG!="Predator")
+dfStats<-subset(dfStats,FFG!="Filterer")
+```
+
+```{r}
+Trtdata2 <- ddply(df, c("Genus", "FFG","Sampling_station"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+cdataplot2=ggplot(Trtdata2, aes(x=FFG,y=mean))+geom_bar(aes(fill = Genus),colour="black", stat="identity")+xlab("FFG")+ylab("Relative Abundance (> 1%)")+theme(axis.title.x=element_blank())+ theme(axis.text.x = element_text(angle = 45, hjust = 1))+ scale_fill_manual(values=cbPalette)+facet_wrap(~Sampling_station)
+cdataplot2
+```
+
+```{r TreatmentPlot4,warning=FALSE}
+#NComparisons<-length(unique(metadata$FFG))*length(unique(Trtdata$Genus))
+#SigList<-length(unique(Trtdata$Genus))
+#SigLetters2<-vector(length=NComparisons)
+
+Means=compare_means(Abundance ~ FFG, data = dfStats, group.by = "Genus", p.adjust.method = "fdr")
+MeansStation=compare_means(Abundance ~ Sampling_station, data = dfStats, group.by = "Genus", p.adjust.method = "fdr")
+#vec<-unlist(lst)
+#for (i in levels(Means$Genus)){
+#  Tax<-i
+#  TaxAbundance<-subset(Means,Genus==i )
+  #print(TaxAbundance)
+#  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+#  difference<-TaxAbundance$p.adj
+#  names(difference)<-Hyphenated
+#  Letters<-multcompLetters(difference)
+  #print(Letters)
+#  SigList[i]<-Letters
+  
+#}
+#vec<-unlist(SigList)
+#vec<-vec[-1]
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = Genus),colour="black", stat="identity")+xlab("FFG")+ylab("Relative Abundance (> 2%)") + theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+theme(axis.title.x=element_blank())+ theme(axis.text.x = element_text(angle = 45, hjust = 1))+ scale_fill_manual(values=cbPalette)#+geom_text(aes(x=FFG, y=mean+se+10,label=vec))
+cdataplot#+  scale_x_discrete(labels=c("0 hrs", "24 hrs", "48 hrs","72 hrs"))
+
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Genus)+xlab("FFG")+ylab("Relative Abundance (> 2%)") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Genus)+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+scale_fill_manual(values=cbPalette)
+#position = "fill"#+geom_errorbar(aes(ymin=mean-se,ymax=mean+se),color="black",width=1)+geom_line(size=1.5,linetype="dashed")+geom_point(size=6)+ylab(geom_text(aes(x=FFG, y=mean+se+5,label=vec))
+
+#+ theme(axis.text.x = element_text(angle = 45, hjust = 1))#+ scale_fill_manual(values=cbPalette)
+compare_means(Abundance~FFG, data=dfStats,group.by="Genus",method = "kruskal.test",p.adjust.method="fdr")
+
+Means=compare_means(Abundance ~ FFG, data = dfStats, 
+                    group.by = "Genus", p.adjust.method = "fdr")
+Means
+
+MeansStation=compare_means(Abundance ~ Sampling_station, data = dfStats, 
+                    group.by = "Genus", p.adjust.method = "fdr")
+MeansStation
+# #head(Means)
+# keeps <- c("Genus","group1","group2","p.adj","method","p.signif")
+# keeps=Means[keeps]
+# #keeps
+# 
+# 
+# test3 <- list('Genus'= keeps$Genus,'group1'=keeps$group1,'group2'= keeps$group2,'p.adj'=keeps$p.adj)
+# test3= as.data.frame(test3)
+# #test3
+# FilteredResults<-test3[!(test3$p.adj>0.05),]            
+# FilteredResults
+
+```
+
+
+
+###PhylumAbuAll
+
+Below is a list of the relative abundance of all taxa at the Phylum level by FFG
+```{r}
+df <- psmelt(PhylumLevel)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Phylum", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+
+```
+
+```{r}
+compare_means(Abundance~FFG, data=df,group.by="Phylum",method = "kruskal.test",p.adjust.method="fdr")
+Means=compare_means(Abundance ~ FFG, data = df, 
+                    group.by = "Phylum", p.adjust.method = "fdr")
+
+```
+
+Multiple comparisons for all taxa grouped by Phylum
+```{r}
+
+NComparisons<-length(unique(metadata$FFG))*length(unique(Trtdata$Phylum))
+SigList<-length(unique(Trtdata$Phylum))
+SigLetters2<-vector(length=NComparisons)
+#vec<-unlist(lst)
+#for (i in levels(Means$Phylum)){
+#  Tax<-i
+#  TaxAbundance<-subset(Means,Phylum==i )
+#  print(TaxAbundance)
+#  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+#  difference<-TaxAbundance$p.adj
+#  names(difference)<-Hyphenated
+#  Letters<-multcompLetters(difference)
+#  print(Letters)
+#  
+#}
+
+
+```
+
+###FamilyAbuAll
+Below is a list of the relative abundance of all taxa at the Family level by FFG
+```{r}
+df <- psmelt(FamilyLevel)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Family", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+
+```
+
+```{r}
+compare_means(Abundance~FFG, data=df,group.by="Family",method = "kruskal.test",p.adjust.method="fdr")
+Means=compare_means(Abundance ~ FFG, data = df, 
+                    group.by = "Family", p.adjust.method = "fdr")
+
+```
+
+Multiple comparisons for all taxa grouped by Family
+```{r}
+
+NComparisons<-length(unique(metadata$FFG))*length(unique(Trtdata$Family))
+SigList<-length(unique(Trtdata$Family))
+SigLetters2<-vector(length=NComparisons)
+#vec<-unlist(lst)
+for (i in levels(Means$Family)){
+  Tax<-i
+  TaxAbundance<-subset(Means,Family==i )
+  print(TaxAbundance)
+  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+  difference<-TaxAbundance$p.adj
+  names(difference)<-Hyphenated
+  Letters<-multcompLetters(difference)
+  print(Letters)
+  
+}
+
+
+
+```
+
+###GenusAbuAll
+
+Below is a list of the relative abundance of all taxa at the Genus level by Decomp Stage 
+```{r}
+GenusSorted2
+```
+
+
+
+
+##PCoA {.tabset}
+
+###Weighted Unifrac
+-Ellipses represent 95% CI for the mean of each group
+```{r PCoA, warning=FALSE}
+physeqStats<-subset_samples(physeq, FFG!="Predator")
+physeqStats<-subset_samples(physeqStats,FFG!="Filterer")
+ord=ordinate(physeq,"PCoA", "wunifrac")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+ord=ordinate(physeq,"PCoA", "wunifrac")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+facet_wrap(~Sampling_station)#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+ord=ordinate(physeq,"PCoA", "wunifrac")
+ordplot=plot_ordination(physeq, ord,"samples", color="Sampling_station")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = Sampling_station))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+facet_wrap(~FFG)#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+```
+
+```{r PCoA2, warning=FALSE}
+ord=ordinate(physeq,"PCoA", "wunifrac")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+```
+
+###Jaccard
+-Ellipses represent 95% CI for the mean of each group
+```{r PCoA3, warning=FALSE}
+ord=ordinate(physeq,"PCoA", "jaccard")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+ord=ordinate(physeq,"PCoA", "jaccard")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+facet_wrap(~Sampling_station,scales = "free")#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+ord=ordinate(physeq,"PCoA", "jaccard")
+ordplot=plot_ordination(physeq, ord,"samples", color="Sampling_station")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = Sampling_station))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+facet_wrap(~FFG)#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+```
+
+```{r PCoA4, warning=FALSE}
+ord=ordinate(physeq,"PCoA", "jaccard")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+```
+
+###Bray-curtis
+-Ellipses represent 95% CI for the mean of each group
+```{r PCoA5, warning=FALSE}
+ord=ordinate(physeq,"PCoA", "bray")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+ord=ordinate(physeq,"PCoA", "bray")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+facet_wrap(~Sampling_station)#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+ord=ordinate(physeq,"PCoA", "bray")
+ordplot=plot_ordination(physeq, ord,"samples", color="Sampling_station")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = Sampling_station))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+facet_wrap(~FFG)#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+
+```
+
+```{r PCoA6, warning=FALSE}
+ord=ordinate(physeq,"PCoA", "bray")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+```
+
+##PERMANOVAs {.tabset}
+###Weighted Unifrac
+####Homogenieity of Multivariate Dispersions
+```{r, warning=FALSE}
+physeqStats<-subset_samples(physeq, FFG!="Predator")
+physeqStats<-subset_samples(physeqStats,FFG!="Filterer")
+GPdist=phyloseq::distance(physeqStats, "wunifrac")
+beta=betadisper(GPdist, sample_data(physeqStats)$FFG)
+permutest(beta)
+boxplot(beta)
+```
+
+####FFG
+``` {r wunifracPERMANOVAs,warning=FALSE}
+GPdist=phyloseq::distance(physeqStats, "wunifrac")
+#MONMDS= ordinate(physeq, "NMDS",GPdist)
+```
+
+```{r}
+adonis(GPdist ~ FFG*Sampling_station, as(sample_data(physeqStats), "data.frame"))
+
+adonis(GPdist ~ FFG, as(sample_data(physeqStats), "data.frame"))
+
+```
+
+
+###Jaccard
+####Homogenieity of Multivariate Dispersions
+```{r, warning=FALSE}
+GPdist=phyloseq::distance(physeq, "jaccard")
+beta=betadisper(GPdist, sample_data(physeq)$FFG)
+permutest(beta)
+boxplot(beta)
+
+print("Beta dispersion location")
+beta=betadisper(GPdist, sample_data(physeq)$Sampling_station)
+permutest(beta)
+boxplot(beta)
+
+print("Beta dispersion Shredder v Scraper")
+physeqShredderVScraper<-subset_samples(physeq, FFG=="Shredder"|FFG=="Scraper")
+
+
+GPdist=phyloseq::distance(physeqShredderVScraper, "jaccard")
+beta=betadisper(GPdist, sample_data(physeqShredderVScraper)$FFG)
+permutest(beta)
+boxplot(beta)
+
+print("Beta dispersion Shredder v Predator")
+physeqShredderVPredator<-subset_samples(physeq, FFG=="Shredder"|FFG=="Predator")
+
+
+GPdist=phyloseq::distance(physeqShredderVPredator, "jaccard")
+beta=betadisper(GPdist, sample_data(physeqShredderVPredator)$FFG)
+permutest(beta)
+boxplot(beta)
+print("Beta dispersion Shredder v Filterer")
+physeqShredderVFilterer<-subset_samples(physeq, FFG=="Shredder"|FFG=="Filterer")
+
+
+GPdist=phyloseq::distance(physeqShredderVFilterer, "jaccard")
+beta=betadisper(GPdist, sample_data(physeqShredderVFilterer)$FFG)
+permutest(beta)
+boxplot(beta)
+
+print("Beta dispersion Predator v Scraper")
+physeqPredatorVScraper<-subset_samples(physeq, FFG=="Predator"|FFG=="Scraper")
+
+
+GPdist=phyloseq::distance(physeqPredatorVScraper, "jaccard")
+beta=betadisper(GPdist, sample_data(physeqPredatorVScraper)$FFG)
+permutest(beta)
+boxplot(beta)
+
+print("Beta dispersion Predator v Filterer")
+physeqPredatorVFilterer<-subset_samples(physeq, FFG=="Predator"|FFG=="Filterer")
+
+
+GPdist=phyloseq::distance(physeqPredatorVFilterer, "jaccard")
+beta=betadisper(GPdist, sample_data(physeqPredatorVFilterer)$FFG)
+permutest(beta)
+boxplot(beta)
+
+print("Beta dispersion Scraper v Filterer")
+physeqScraperVFilterer<-subset_samples(physeq, FFG=="Scraper"|FFG=="Filterer")
+
+
+GPdist=phyloseq::distance(physeqScraperVFilterer, "jaccard")
+beta=betadisper(GPdist, sample_data(physeqScraperVFilterer)$FFG)
+permutest(beta)
+boxplot(beta)
+
+
+
+
+```
+
+####FFG
+``` {r jaccardPERMANOVAs,warning=FALSE}
+GPdist=phyloseq::distance(physeqStats, "jaccard")
+#MONMDS= ordinate(physeq, "NMDS",GPdist)
+```
+
+```{r}
+adonis(GPdist ~ FFG*Sampling_station, as(sample_data(physeqStats), "data.frame"))
+
+adonis(GPdist ~ FFG, as(sample_data(physeqStats), "data.frame"))
+
+```
+
+###Bray-curtis
+####Homogenieity of Multivariate Dispersions
+```{r, warning=FALSE}
+GPdist=phyloseq::distance(physeqStats, "bray")
+beta=betadisper(GPdist, sample_data(physeqStats)$FFG)
+permutest(beta)
+boxplot(beta)
+```
+
+####FFG
+``` {r brayPERMANOVAs,warning=FALSE}
+GPdist=phyloseq::distance(physeqStats, "bray")
+#MONMDS= ordinate(physeq, "NMDS",GPdist)
+```
+
+```{r}
+adonis(GPdist ~ FFG*Sampling_station, as(sample_data(physeqStats), "data.frame"))
+
+adonis(GPdist ~ FFG, as(sample_data(physeqStats), "data.frame"))
+
+```
+
+###Jaccard Split by Sampling Station
+``` {r ,warning=FALSE}
+physeqOstana<-subset_samples(physeq, Sampling_station=="Ostana")
+physeqOstanaStats<-subset_samples(physeqOstana,FFG!="Predator")
+physeqPDRStats<-subset_samples(physeq, Sampling_station!="Ostana")
+#MONMDS= ordinate(physeq, "NMDS",GPdist)
+
+
+```
+
+
+Ostana (Predator not included in stats due to N = 2)
+```{r}
+GPdist=phyloseq::distance(physeqOstanaStats, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqOstanaStats), "data.frame"))
+
+
+print("Shredder vs Scraper Ostana")
+physeqOstanaShredderVScraper<-subset_samples(physeqOstanaStats, FFG=="Shredder"|FFG=="Scraper")
+GPdist=phyloseq::distance(physeqOstanaShredderVScraper, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqOstanaShredderVScraper), "data.frame"))
+
+print("Shredder vs Filterer Ostana")
+physeqOstanaShredderVFilterer<-subset_samples(physeqOstanaStats, FFG=="Shredder"|FFG=="Filterer")
+GPdist=phyloseq::distance(physeqOstanaShredderVFilterer, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqOstanaShredderVFilterer), "data.frame"))
+
+print("Scraper vs Filterer Ostana")
+physeqOstanaScraperVFilterer<-subset_samples(physeqOstanaStats, FFG=="Scraper"|FFG=="Filterer")
+GPdist=phyloseq::distance(physeqOstanaScraperVFilterer, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqOstanaScraperVFilterer), "data.frame"))
+
+```
+
+PDR (Includes Predator, Shredder, Scraper)
+```{r}
+GPdist=phyloseq::distance(physeqPDRStats, "jaccard")
+
+adonis(GPdist ~ FFG, as(sample_data(physeqPDRStats), "data.frame"))
+
+
+
+print("Shredder vs Scraper PDR")
+physeqPDRShredderVScraper<-subset_samples(physeqPDRStats, FFG=="Shredder"|FFG=="Scraper")
+GPdist=phyloseq::distance(physeqPDRShredderVScraper, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqPDRShredderVScraper), "data.frame"))
+
+
+print("Shredder vs Predator PDR")
+physeqPDRShredderVPredator<-subset_samples(physeqPDRStats, FFG=="Shredder"|FFG=="Predator")
+GPdist=phyloseq::distance(physeqPDRShredderVPredator, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqPDRShredderVPredator), "data.frame"))
+
+print("Scraper vs Predator PDR")
+physeqPDRScraperVPredator<-subset_samples(physeqPDRStats, FFG=="Scraper"|FFG=="Predator")
+GPdist=phyloseq::distance(physeqPDRScraperVPredator, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqPDRScraperVPredator), "data.frame"))
+
+
+
+```
+
+
+
+
+##Random Forest {.tabset}
+
+###By Sampling Station
+```{r }
+set.seed(200)
+GPr  = transform_sample_counts(physeq, function(x) x / sum(x) ) #transform samples based on relative abundance
+GPr = filter_taxa(GPr, function(x) mean(x) > 1e-5, TRUE)
+PhylumAll=tax_glom(GPr, "Phylum")
+
+FamilyAll=tax_glom(GPr,"Family")
+GenusAll=tax_glom(GPr,"Genus")
+
+ForestData=GenusAll#Change this one so you dont have to rewrite all variables
+predictors=t(otu_table(ForestData))
+response <- as.factor(sample_data(ForestData)$Sampling_station)
+rf.data <- data.frame(response, predictors)
+MozzieForest <- randomForest(response~., data = rf.data, ntree = 1000)
+print(MozzieForest)#returns overall Random Forest results
+imp <- importance(MozzieForest)#all the steps that are imp or imp. are building a dataframe that contains info about the taxa used by the Random Forest testto classify treatment 
+imp <- data.frame(predictors = rownames(imp), imp)
+imp.sort <- arrange(imp, desc(MeanDecreaseGini))
+imp.sort$predictors <- factor(imp.sort$predictors, levels = imp.sort$predictors)
+imp.20 <- imp.sort[1:23, ]#22
+ggplot(imp.20, aes(x = predictors, y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "indianred") +
+  coord_flip() +
+  ggtitle("Most important genera for classifying  samples\n by Sampling Station")#\n in a string tells it to start a new line
+#imp.20$MeanDecreaseGini
+otunames <- imp.20$predictors
+r <- rownames(tax_table(ForestData)) %in% otunames
+otunames
+PredictorTable<-kable(tax_table(ForestData)[r, ])#returns a list of the most important predictors for Random Forest Classification
+PredictorTable
+```
+
+```{r}
+
+GenusRandomForestSubset = subset_taxa(GenusAll, row.names(tax_table(GenusAll))%in% otunames)
+GenusRandomForestSubset
+
+df <- psmelt(GenusRandomForestSubset)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Genus", "Sampling_station"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+Trtdata
+cdataplot=ggplot(Trtdata, aes(x=Sampling_station,y=mean))+geom_bar(aes(fill = Sampling_station),colour="black", stat="identity")+ facet_grid(~Genus)+xlab("Sampling Station")+ylab("Relative Abundance") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Genus,scales = "free_y")+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+scale_fill_manual(values=cbPalette)
+cdataplot
+
+
+compare_means(Abundance ~ Sampling_station, data = df, group.by = "Genus", p.adjust.method = "fdr",method="kruskal.test")
+
+```
+
+###ByFFGOstana
+
+```{r }
+GenusAllOstanaStats<-subset_samples(GenusAll, Sampling_station=="Ostana")
+GenusAllOstanaStats<-subset_samples(GenusAllOstanaStats, FFG!="Predator")
+
+ForestData=GenusAllOstanaStats#Change this one so you dont have to rewrite all variables
+predictors=t(otu_table(ForestData))
+response <- as.factor(sample_data(ForestData)$FFG)
+rf.data <- data.frame(response, predictors)
+MozzieForest <- randomForest(response~., data = rf.data, ntree = 1000)
+print(MozzieForest)#returns overall Random Forest results
+imp <- importance(MozzieForest)#all the steps that are imp or imp. are building a dataframe that contains info about the taxa used by the Random Forest testto classify treatment 
+imp <- data.frame(predictors = rownames(imp), imp)
+imp.sort <- arrange(imp, desc(MeanDecreaseGini))
+imp.sort$predictors <- factor(imp.sort$predictors, levels = imp.sort$predictors)
+imp.20 <- imp.sort[1:19, ]#22
+ggplot(imp.20, aes(x = predictors, y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "indianred") +
+  coord_flip() +
+  ggtitle("Most important genera for classifying  samples\n by FFG")#\n in a string tells it to start a new line
+#imp.20$MeanDecreaseGini
+otunames <- imp.20$predictors
+r <- rownames(tax_table(ForestData)) %in% otunames
+otunames
+PredictorTable<-kable(tax_table(ForestData)[r, ])#returns a list of the most important predictors for Random Forest Classification
+PredictorTable
+```
+
+```{r}
+
+GenusRandomForestSubset = subset_taxa(GenusAll, row.names(tax_table(GenusAll))%in% otunames)
+GenusRandomForestSubset
+
+df <- psmelt(GenusRandomForestSubset)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Genus", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Genus)+xlab("Feeding Group")+ylab("Relative Abundance") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Genus,scales = "free_y")+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+scale_fill_manual(values=cbPalette)
+cdataplot
+
+compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr",method="kruskal.test")
+
+Means<-compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr")
+Means
+Means=compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr")
+SigList<-length(unique(Trtdata$Genus))
+for (i in levels(Means$Genus)){
+  Tax<-i
+  TaxAbundance<-subset(Means,Genus==i )
+  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+  difference<-TaxAbundance$p.adj
+  names(difference)<-Hyphenated
+  Letters<-multcompLetters(difference)
+  #print(Letters)
+  SigList[i]<-Letters
+  
+}
+vec<-unlist(SigList)
+vec<-vec[-1]
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_wrap(~Genus,scales="free_y")+xlab("FFG")+ylab("Relative Abundance (%) Forest") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+geom_text(aes(x=FFG, y=mean+se+se,label=vec))+ scale_fill_manual(values=cbPalette)
+#scale_x_discrete(labels=c("0 hrs", "24 hrs", "48 hrs","72 hrs"))+ theme(axis.text.x = element_text(angle = 45, hjust = 1))#+ scale_fill_manual(values=cbPalette)
+cdataplot
+
+
+```
+
+###ByFFGPDR
+
+```{r }
+GenusAllPDRStats<-subset_samples(GenusAll, Sampling_station!="Ostana")
+
+
+ForestData=GenusAllPDRStats#Change this one so you dont have to rewrite all variables
+predictors=t(otu_table(ForestData))
+response <- as.factor(sample_data(ForestData)$FFG)
+rf.data <- data.frame(response, predictors)
+MozzieForest <- randomForest(response~., data = rf.data, ntree = 1000)
+print(MozzieForest)#returns overall Random Forest results
+imp <- importance(MozzieForest)#all the steps that are imp or imp. are building a dataframe that contains info about the taxa used by the Random Forest testto classify treatment 
+imp <- data.frame(predictors = rownames(imp), imp)
+imp.sort <- arrange(imp, desc(MeanDecreaseGini))
+imp.sort$predictors <- factor(imp.sort$predictors, levels = imp.sort$predictors)
+imp.20 <- imp.sort[1:19, ]#22
+ggplot(imp.20, aes(x = predictors, y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "indianred") +
+  coord_flip() +
+  ggtitle("Most important genera for classifying  samples\n by FFG")#\n in a string tells it to start a new line
+#imp.20$MeanDecreaseGini
+otunames <- imp.20$predictors
+r <- rownames(tax_table(ForestData)) %in% otunames
+otunames
+PredictorTable<-kable(tax_table(ForestData)[r, ])#returns a list of the most important predictors for Random Forest Classification
+PredictorTable
+```
+
+```{r}
+
+GenusRandomForestSubset = subset_taxa(GenusAll, row.names(tax_table(GenusAll))%in% otunames)
+GenusRandomForestSubset
+
+df <- psmelt(GenusRandomForestSubset)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Genus", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Genus)+xlab("Feeding Group")+ylab("Relative Abundance") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Genus,scales = "free_y")+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+scale_fill_manual(values=cbPalette)
+#cdataplot
+
+compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr",method="kruskal.test")
+
+Means<-compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr")
+Means
+Means=compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr")
+SigList<-length(unique(Trtdata$Genus))
+for (i in levels(Means$Genus)){
+  Tax<-i
+  TaxAbundance<-subset(Means,Genus==i )
+  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+  difference<-TaxAbundance$p.adj
+  names(difference)<-Hyphenated
+  Letters<-multcompLetters(difference)
+  #print(Letters)
+  SigList[i]<-Letters
+  
+}
+vec<-unlist(SigList)
+vec<-vec[-1]
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_wrap(~Genus,scales="free_y")+xlab("FFG")+ylab("Relative Abundance (%) Alpine Prairie") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+geom_text(aes(x=FFG, y=mean+se+se,label=vec))+ scale_fill_manual(values=cbPalette)
+#scale_x_discrete(labels=c("0 hrs", "24 hrs", "48 hrs","72 hrs"))+ theme(axis.text.x = element_text(angle = 45, hjust = 1))#+ scale_fill_manual(values=cbPalette)
+cdataplot
+
+
+```
+
+###ByFFGCombined
+
+```{r }
+#GenusAllStats<-subset_samples(GenusAll, FFG!="Predator")
+#GenusAllStats<-subset_samples(GenusAllStats, FFG!="Filterer")
+GenusAllStats<-GenusAll
+
+ForestData=GenusAllStats#Change this one so you dont have to rewrite all variables
+predictors=t(otu_table(ForestData))
+response <- as.factor(sample_data(ForestData)$FFG)
+rf.data <- data.frame(response, predictors)
+MozzieForest <- randomForest(response~., data = rf.data, ntree = 1000)
+print(MozzieForest)#returns overall Random Forest results
+imp <- importance(MozzieForest)#all the steps that are imp or imp. are building a dataframe that contains info about the taxa used by the Random Forest testto classify treatment 
+imp <- data.frame(predictors = rownames(imp), imp)
+imp.sort <- arrange(imp, desc(MeanDecreaseGini))
+imp.sort$predictors <- factor(imp.sort$predictors, levels = imp.sort$predictors)
+imp.20 <- imp.sort[1:19, ]#22
+ggplot(imp.20, aes(x = predictors, y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "indianred") +
+  coord_flip() +
+  ggtitle("Most important genera for classifying  samples\n by FFG")#\n in a string tells it to start a new line
+#imp.20$MeanDecreaseGini
+otunames <- imp.20$predictors
+r <- rownames(tax_table(ForestData)) %in% otunames
+otunames
+PredictorTable<-kable(tax_table(ForestData)[r, ])#returns a list of the most important predictors for Random Forest Classification
+PredictorTable
+```
+
+```{r}
+
+GenusRandomForestSubset = subset_taxa(GenusAll, row.names(tax_table(GenusAll))%in% otunames)
+GenusRandomForestSubset
+
+df <- psmelt(GenusRandomForestSubset)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Genus", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+Trtdata
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Genus)+xlab("Feeding Group")+ylab("Relative Abundance") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Genus,scales = "free_y")+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+scale_fill_manual(values=cbPalette)
+cdataplot
+
+compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr",method="kruskal.test")
+
+Means<-compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr")
+Means
+Means=compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr")
+SigList<-length(unique(Trtdata$Genus))
+for (i in levels(Means$Genus)){
+  Tax<-i
+  TaxAbundance<-subset(Means,Genus==i )
+  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+  difference<-TaxAbundance$p.adj
+  names(difference)<-Hyphenated
+  Letters<-multcompLetters(difference)
+  #print(Letters)
+  SigList[i]<-Letters
+  
+}
+vec<-unlist(SigList)
+vec<-vec[-1]
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_wrap(~Genus,scales="free_y")+xlab("FFG")+ylab("Relative Abundance (%)") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+geom_text(aes(x=FFG, y=mean+se+se,label=vec))+ scale_fill_manual(values=cbPalette)
+#scale_x_discrete(labels=c("0 hrs", "24 hrs", "48 hrs","72 hrs"))+ theme(axis.text.x = element_text(angle = 45, hjust = 1))#+ scale_fill_manual(values=cbPalette)
+cdataplot
+
+
+```
+
+##PiCRUST {.tabset}
+
+```{r}
+PiCRUST<-import_biom("C:\\Users\\Joe Receveur\\Downloads\\ItalyInvertPiCRUST2.20.19.biom")
+PiCRUST<-merge_phyloseq(PiCRUST,sampdat)
+PiCRUST=rarefy_even_depth(PiCRUST, 750000, replace = TRUE, trimOTUs = TRUE, verbose = TRUE,rngseed = TRUE)
+```
+
+###PiCRUST by sampling x FFG
+```{r}
+GPdist=phyloseq::distance(PiCRUST, "jaccard")
+adonis(GPdist ~ FFG*Sampling_station, as(sample_data(PiCRUST), "data.frame"))
+```
+
+###PiCRUST beta div by FFG
+```{r}
+
+print("Shredder vs Scraper")
+PiCRUSTShredderVScraper<-subset_samples(PiCRUST, FFG=="Shredder"|FFG=="Scraper")
+GPdist=phyloseq::distance(PiCRUSTShredderVScraper, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(PiCRUSTShredderVScraper), "data.frame"))
+
+print("Shredder vs Filterer")
+PiCRUSTShredderVFilterer<-subset_samples(PiCRUST, FFG=="Shredder"|FFG=="Filterer")
+GPdist=phyloseq::distance(PiCRUSTShredderVFilterer, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(PiCRUSTShredderVFilterer), "data.frame"))
+
+print("Shredder vs Predator")
+physeqShredderVPredator<-subset_samples(PiCRUST, FFG=="Shredder"|FFG=="Predator")
+GPdist=phyloseq::distance(physeqShredderVPredator, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqShredderVPredator), "data.frame"))
+
+print("Scraper vs Filterer")
+PiCRUSTScraperVFilterer<-subset_samples(PiCRUST, FFG=="Scraper"|FFG=="Filterer")
+GPdist=phyloseq::distance(PiCRUSTScraperVFilterer, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(PiCRUSTScraperVFilterer), "data.frame"))
+
+
+print("Scraper vs Predator")
+physeqScraperVPredator<-subset_samples(PiCRUST, FFG=="Scraper"|FFG=="Predator")
+GPdist=phyloseq::distance(physeqScraperVPredator, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqScraperVPredator), "data.frame"))
+
+print("Predator vs Filterer")
+PiCRUSTPredatorVFilterer<-subset_samples(PiCRUST, FFG=="Predator"|FFG=="Filterer")
+GPdist=phyloseq::distance(PiCRUSTPredatorVFilterer, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(PiCRUSTPredatorVFilterer), "data.frame"))
+
+
+```
+
+###PiCRUST Jaccard Split by Sampling Station
+``` {r ,warning=FALSE}
+physeqOstana<-subset_samples(PiCRUST, Sampling_station=="Ostana")
+physeqOstanaStats<-subset_samples(physeqOstana,FFG!="Predator")
+physeqPDRStats<-subset_samples(PiCRUST, Sampling_station!="Ostana")
+#MONMDS= ordinate(physeq, "NMDS",GPdist)
+```
+
+
+Ostana (Predator not included in stats due to N = 2)
+```{r}
+GPdist=phyloseq::distance(physeqOstanaStats, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqOstanaStats), "data.frame"))
+
+print("Shredder vs Scraper Ostana")
+physeqOstanaShredderVScraper<-subset_samples(physeqOstanaStats, FFG=="Shredder"|FFG=="Scraper")
+GPdist=phyloseq::distance(physeqOstanaShredderVScraper, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqOstanaShredderVScraper), "data.frame"))
+
+print("Shredder vs Filterer Ostana")
+physeqOstanaShredderVFilterer<-subset_samples(physeqOstanaStats, FFG=="Shredder"|FFG=="Filterer")
+GPdist=phyloseq::distance(physeqOstanaShredderVFilterer, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqOstanaShredderVFilterer), "data.frame"))
+
+print("Scraper vs Filterer Ostana")
+physeqOstanaScraperVFilterer<-subset_samples(physeqOstanaStats, FFG=="Scraper"|FFG=="Filterer")
+GPdist=phyloseq::distance(physeqOstanaScraperVFilterer, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqOstanaScraperVFilterer), "data.frame"))
+
+```
+
+PDR (Includes Predator, Shredder, Scraper)
+```{r}
+GPdist=phyloseq::distance(physeqPDRStats, "jaccard")
+
+adonis(GPdist ~ FFG, as(sample_data(physeqPDRStats), "data.frame"))
+
+print("Shredder vs Scraper PDR")
+physeqPDRShredderVScraper<-subset_samples(physeqPDRStats, FFG=="Shredder"|FFG=="Scraper")
+GPdist=phyloseq::distance(physeqPDRShredderVScraper, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqPDRShredderVScraper), "data.frame"))
+
+
+print("Shredder vs Predator PDR")
+physeqPDRShredderVPredator<-subset_samples(physeqPDRStats, FFG=="Shredder"|FFG=="Predator")
+GPdist=phyloseq::distance(physeqPDRShredderVPredator, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqPDRShredderVPredator), "data.frame"))
+
+print("Scraper vs Predator PDR")
+physeqPDRScraperVPredator<-subset_samples(physeqPDRStats, FFG=="Scraper"|FFG=="Predator")
+GPdist=phyloseq::distance(physeqPDRScraperVPredator, "jaccard")
+adonis(GPdist ~ FFG, as(sample_data(physeqPDRScraperVPredator), "data.frame"))
+
+
+
+```
+
+###PCoA PiCRUST
+```{r}
+ord=ordinate(PiCRUST,"PCoA", "jaccard")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+ord=ordinate(PiCRUST,"PCoA", "jaccard")
+ordplot=plot_ordination(physeq, ord,"samples", color="FFG")+geom_point(size=4)+scale_colour_manual(values=cbPalette)+scale_fill_manual(values=cbPalette)
+ordplot+ stat_ellipse(type= "norm",geom = "polygon", alpha = 1/4, aes(fill = FFG))+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+facet_wrap(~Sampling_station)#+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+
+```

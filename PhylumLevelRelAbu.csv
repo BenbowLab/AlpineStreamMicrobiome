@@ -1,0 +1,57 @@
+Phylum,FFG,Sampling_station,N,mean,sd,se
+Actinobacteria,Filterer,Forest,4,0.383333333,0.481125224,0.240562612
+Bacteroidetes,Filterer,Forest,4,22.61666667,3.76696164,1.88348082
+Firmicutes,Filterer,Forest,4,20.025,13.00792849,6.503964247
+Planctomycetes,Filterer,Forest,4,1.308333333,0.408588356,0.204294178
+Proteobacteria,Filterer,Forest,4,45.125,15.08895537,7.544477684
+Tenericutes,Filterer,Forest,4,3.075,3.134795758,1.567397879
+Verrucomicrobia,Filterer,Forest,4,1.783333333,1.386842938,0.693421469
+Other,Filterer,Forest,4,5.683333333,0,0
+Actinobacteria,Predator,Forest,2,1.45,0.023570226,0.016666667
+Bacteroidetes,Predator,Forest,2,21.98333333,1.956328761,1.383333333
+Firmicutes,Predator,Forest,2,0.083333333,0.023570226,0.016666667
+Planctomycetes,Predator,Forest,2,1.983333333,0.023570226,0.016666667
+Proteobacteria,Predator,Forest,2,54.21666667,13.1286159,9.283333333
+Tenericutes,Predator,Forest,2,13.53333333,18.1019336,12.8
+Verrucomicrobia,Predator,Forest,2,4.816666667,3.74766594,2.65
+Other,Predator,Forest,2,1.933333333,0,0
+Actinobacteria,Scraper,Forest,5,0.78,0.645755372,0.288790582
+Bacteroidetes,Scraper,Forest,5,1.126666667,0.32437975,0.145067034
+Firmicutes,Scraper,Forest,5,0.646666667,0.967413505,0.432640472
+Planctomycetes,Scraper,Forest,5,3.766666667,3.123922036,1.397060406
+Proteobacteria,Scraper,Forest,5,62.74666667,28.61372631,12.79644742
+Tenericutes,Scraper,Forest,5,28.52666667,31.25191905,13.97628309
+Verrucomicrobia,Scraper,Forest,5,1.08,0.338788692,0.151510909
+Other,Scraper,Forest,5,1.326666667,0,0
+Actinobacteria,Shredder,Forest,3,2.333333333,1.814754345,1.04774891
+Bacteroidetes,Shredder,Forest,3,16.77777778,3.204221752,1.849958291
+Firmicutes,Shredder,Forest,3,37.2,13.27872149,7.666473428
+Planctomycetes,Shredder,Forest,3,0.466666667,0.152752523,0.08819171
+Proteobacteria,Shredder,Forest,3,40.54444444,14.32799642,8.272272591
+Tenericutes,Shredder,Forest,3,0.377777778,0.083887049,0.04843221
+Verrucomicrobia,Shredder,Forest,3,0.4,0.176383421,0.101835015
+Other,Shredder,Forest,3,1.9,0,0
+Actinobacteria,Predator,Prairie ,4,1.241666667,0.478713554,0.239356777
+Bacteroidetes,Predator,Prairie ,4,38.05833333,8.672663524,4.336331762
+Firmicutes,Predator,Prairie ,4,0.341666667,0.539117935,0.269558968
+Planctomycetes,Predator,Prairie ,4,1.408333333,0.908142182,0.454071091
+Proteobacteria,Predator,Prairie ,4,49.66666667,8.909212876,4.454606438
+Tenericutes,Predator,Prairie ,4,0.833333333,1.644519518,0.822259759
+Verrucomicrobia,Predator,Prairie ,4,3.333333333,2.122367651,1.061183825
+Other,Predator,Prairie ,4,5.116666667,0,0
+Actinobacteria,Scraper,Prairie ,4,1.783333333,1.769180601,0.884590301
+Bacteroidetes,Scraper,Prairie ,4,0.491666667,0.829714364,0.414857182
+Firmicutes,Scraper,Prairie ,4,0.966666667,1.652159081,0.826079541
+Planctomycetes,Scraper,Prairie ,4,0.791666667,0.909364858,0.454682429
+Proteobacteria,Scraper,Prairie ,4,74.575,27.62660252,13.81330126
+Tenericutes,Scraper,Prairie ,4,20.56666667,27.80570152,13.90285076
+Verrucomicrobia,Scraper,Prairie ,4,0.316666667,0.505158574,0.252579287
+Other,Scraper,Prairie ,4,0.508333333,0,0
+Actinobacteria,Shredder,Prairie ,4,0.433333333,0.249443826,0.124721913
+Bacteroidetes,Shredder,Prairie ,4,27.38333333,1.471330967,0.735665484
+Firmicutes,Shredder,Prairie ,4,36.20833333,1.144188213,0.572094106
+Planctomycetes,Shredder,Prairie ,4,0.158333333,0.119799215,0.059899607
+Proteobacteria,Shredder,Prairie ,4,32.00833333,0.894996379,0.44749819
+Tenericutes,Shredder,Prairie ,4,0.575,0.422843111,0.211421555
+Verrucomicrobia,Shredder,Prairie ,4,0.416666667,0.181557052,0.090778526
+Other,Shredder,Prairie ,4,2.816666667,0,0
