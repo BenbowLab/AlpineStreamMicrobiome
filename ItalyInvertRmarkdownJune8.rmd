@@ -1,6 +1,6 @@
 ---
 title: "AlpineStreamInsectMicrobiome"
-author: "JReceveur"
+author: "JReceveur (receveur@msu.edu)"
 output: 
   html_document:
     toc: true
@@ -51,14 +51,28 @@ physeq=merge_phyloseq(biom,sampdat,tree)
 physeq=rarefy_even_depth(physeq, 3000, replace = TRUE, trimOTUs = TRUE, verbose = TRUE,rngseed = TRUE)
 ```
 
+Study overview: This study was conducted at two location along the Po river in Northwestern Italy. The two sites were chosen to represent two distinct riparian condition. One site (Pian della Regina) was an alpine prairie with very sparse vegetation located above the treeline. The second site (Ostana) consisted of a dense riparian forest and much higher levels of shade and leaf inputs. Macroinvertebrate samples were hand collected and identified to species as well as classified to macroinvertebrate functional feeding groups.
+
+After the surfaces of the macroinvertebrates were decontaminated, the internal bacterial communities were identified throught high throughtput sequencing of the 16S V4 region (515f, 806r) on an Illumina MiSeq platform. After filtering in QIIME2 (2018.11), bacterial reads were classified to taxanomic and functional orthologs (KEGG) using QIIME 2 and PiCRUSt 2.
+
+A total of 26 invertebrates were sequenced (see metadata tab below for breakdown)
+
+To see the corresponding code for each output click on the button labeled code above each box. All error bars are SEM and all multiple comparisons are adjusted with a FDR correction unless otherwise noted.
+
+For code used to make figures see "ManuscriptFigures.r". The .biom files and metadata are in the Github project repository. 
+
 ##Data overview{.tabset}
 ###Sequencing
+
+Based on the alpha rarefaction curves (Figure S1), samples were rarefied to 3,000 reads to limit the impact of differential library sizes on diversity metrics. 
 ```{r}
 physeq
 
 ```
 
 ###Metadata
+
+On average, predators, scrapers, and shredders were larger at the forested station (Ostana) than at the alpine prairie site.
 ```{r}
 Trtdata <- ddply(metadata, c("Sampling_station", "FFG","Taxon_name"), summarise,
                  N    = length(id),
@@ -97,6 +111,9 @@ t.test( Mass~ Sampling_station, data=Shredders)
 
 
 ##Alpha Diversity {.tabset}
+
+All three diversity metrics showed a similar pattern with scrapers having lower diversity than the other three groups. 
+
 ###Observed Species
 
 ```{r}
@@ -325,7 +342,7 @@ PhylumAll2<-ddply(df2, c("Phylum","FFG"), summarise, #For Rel abu tabs
                   sd   = sd(Abundance),
                   se   = sd / sqrt(N)
 )
-PhylumAll2
+#PhylumAll2 Run this to see all taxa, commented out since its a large list
 ```
 
 
@@ -431,6 +448,9 @@ cdataplot
 ```
 
 ###Split by Station
+Since there were not enough samples collect to compare between all groups at both stations, only the groups present with greater than 3 samples were compared at each station. 
+
+Ostana (Forest)
 ```{r}
 df <- psmelt(PhylumLevel)
 df$Abundance=df$Abundance*100
@@ -440,7 +460,6 @@ dfStatsPDR<-subset(df,Sampling_station!="Ostana")
 
 dfStatsOstana<-subset(dfOstana,FFG!="Predator")
 
-print("Ostana")
 compare_means(Abundance ~ FFG, data = dfStatsOstana, group.by = "Phylum", p.adjust.method = "fdr",method="kruskal.test")
 
 Means<-compare_means(Abundance ~ FFG, data = dfStatsOstana, group.by = "Phylum", p.adjust.method = "fdr")
@@ -452,6 +471,11 @@ test3 <- list('Phylum'= keeps$Phylum,'group1'=keeps$group1,'group2'= keeps$group
 test3= as.data.frame(test3)
 FilteredResults<-test3[!(test3$p.adj>0.1),]            
 FilteredResults
+```
+
+Pian della Regina (Alpine Prairie)
+
+```{r}
 print("Pian della Regina")
 
 Means<-compare_means(Abundance ~ FFG, data = dfStatsPDR, group.by = "Phylum", p.adjust.method = "fdr")
@@ -540,6 +564,8 @@ ggplot(dfStatsPDR, aes(x=FFG,y=Abundance,fill=FFG))+geom_boxplot()+ scale_fill_m
 
 
 ###Split by FFG
+
+This set of tests is comparing bacterial between sites for a particular group (e.g. Shredders at Ostana va PDR)
 ```{r}
 df <- psmelt(PhylumLevel)
 df$Abundance=df$Abundance*100
