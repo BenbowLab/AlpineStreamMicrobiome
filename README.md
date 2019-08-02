@@ -7,8 +7,14 @@ ManuscriptFigures.r contains code used in creating figures for manuscript
 
 # Data files:
 ItalyInvert2018WTax.biom contain the filtered ESV abundances and taxonomy after filtering in QIIME 2
+
 ItalyInvert11.29.18 contains an unrooted tree created using default settings in QIIME 2
+
 ItalyInvertMetadataWDiversity3.5.2019.csv contains sample metadata as well as Shannon and Faith's PD computed in QIIME 2
+
+ItalyInvertPiRUST2.20.19.biom contains PICRUST data (computed using QIIME 2 Plugin) 
+
+
 
 
 see also: https://benbowlab.github.io/ItalyWorkshop.html
