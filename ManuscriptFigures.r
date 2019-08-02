@@ -1,5 +1,7 @@
 #Italy Invert Figs
-
+#The following code is for the figures presented in the manuscript. 
+#For all other code use for analysis see ItalyInvertRmarkdownJune8.rmd or ItalyInvertRmarkdownJune8.html for precomputed output
+#Joe Receveur Email: josephreceveur[at] gmail.com
 #######
 #Import
 #######
