@@ -14,7 +14,14 @@ ItalyInvertMetadataWDiversity3.5.2019.csv contains sample metadata as well as Sh
 
 ItalyInvertPiRUST2.20.19.biom contains PICRUST data (computed using QIIME 2 Plugin) 
 
+# Output files
+Figures/  Contains manuscript figures
 
+ItalyInvertRmarkdownJune8.html  contains results and figures used for data exploration, tables, and intext statistics
+
+PhylumlevelRelAbu.csv Phylum level Relative bacterial abundance split by sample location and insect species
+
+FamilylevelRelAbu.csv  Family level Relative bacterial abundance split by sample location and insect species
 
 
 see also: https://benbowlab.github.io/ItalyWorkshop.html
