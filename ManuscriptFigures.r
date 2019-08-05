@@ -250,6 +250,7 @@ imp <- data.frame(predictors = rownames(imp), imp)
 imp.sort <- arrange(imp, desc(MeanDecreaseGini))
 imp.sort$predictors <- factor(imp.sort$predictors, levels = imp.sort$predictors)
 imp.20 <- imp.sort[1:19, ]#22
+
 ggplot(imp.20, aes(x = predictors, y = MeanDecreaseGini)) +
   geom_bar(stat = "identity", fill = "indianred") +
   coord_flip() +
@@ -398,7 +399,7 @@ dev.off()
 ##########
 #Figure Supplemental Random Forest indicator taxa Forest
 ############
-rm(list=ls())
+#rm(list=ls())
 set.seed(27)
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#000000","#CC79A7","#E12D00")
 theme_set(theme_bw(base_size = 18)+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()))
@@ -413,7 +414,6 @@ tree=read_tree("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\Ital
 sampdat=sample_data(metadata)
 sample_names(sampdat)=metadata$id
 physeq=merge_phyloseq(biom,sampdat,tree)
-physeq=rarefy_even_depth(physeq, 3000, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
 
 
 GPr  = transform_sample_counts(physeq, function(x) x / sum(x) ) #transform samples based on relative abundance
@@ -422,17 +422,26 @@ GenusAll=tax_glom(GPr,"Genus")
 GenusAllOstanaStats<-subset_samples(GenusAll, Sampling_station=="Forest")
 GenusAllOstanaStats<-subset_samples(GenusAllOstanaStats, FFG!="Predator")
 
-ForestData=GenusAllOstanaStats#Change this one so you dont have to rewrite all variables
+ForestData=GenusAll#Change this one so you dont have to rewrite all variables
+#tax_table(ForestData)[,6]
 predictors=t(otu_table(ForestData))
+
 response <- as.factor(sample_data(ForestData)$FFG)
 rf.data <- data.frame(response, predictors)
-MozzieForest <- randomForest(response~., data = rf.data, ntree = 1000)
+MozzieForest <- randomForest(response~., data = rf.data, ntree = 1000,importance=TRUE)
+varImpPlot(MozzieForest)
 print(MozzieForest)#returns overall Random Forest results
 imp <- importance(MozzieForest)#all the steps that are imp or imp. are building a dataframe that contains info about the taxa used by the Random Forest testto classify treatment 
-imp <- data.frame(predictors = rownames(imp), imp)
+head((imp))
+
+imp <- data.frame(predictors = row.names(imp), imp)
+#imp
 imp.sort <- arrange(imp, desc(MeanDecreaseGini))
+head(imp.sort)#imp.sort$predictors <- factor(imp.sort$predictors, levels = imp.sort$predictors)
 imp.sort$predictors <- factor(imp.sort$predictors, levels = imp.sort$predictors)
-imp.20 <- imp.sort[1:22, ]#22
+imp.20 <- imp.sort[1:20,]
+imp.20
+
 ggplot(imp.20, aes(x = predictors, y = MeanDecreaseGini)) +
   geom_bar(stat = "identity", fill = "indianred") +
   coord_flip() +
@@ -505,7 +514,7 @@ tree=read_tree("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\Ital
 sampdat=sample_data(metadata)
 sample_names(sampdat)=metadata$id
 physeq=merge_phyloseq(biom,sampdat,tree)
-physeq=rarefy_even_depth(physeq, 3000, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+#physeq=rarefy_even_depth(physeq, 3000, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
 
 
 
@@ -583,3 +592,253 @@ cdataplot
 dev.off()
 
 
+#####################
+#Supplemental Fig Random Forest FFG Mean Decrease Accuracy
+####################
+set.seed(27)
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#000000","#CC79A7","#E12D00")
+theme_set(theme_bw(base_size = 18)+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()))
+biom=import_biom("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\ItalyInvert2018WTax.biom",parseFunction= parse_taxonomy_greengenes)
+#tax_table(biom) <- tax_table(biom)[,-c(5:10,14)]#remove dummy ranks
+
+metadata=read.csv("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\ItalyInvertMetadataWDiversity3.5.2019.csv",header = TRUE)
+head(metadata)
+
+tree=read_tree("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\ItalyInvert11.29.18Tree.nwk")
+
+sampdat=sample_data(metadata)
+sample_names(sampdat)=metadata$id
+physeq=merge_phyloseq(biom,sampdat,tree)
+
+
+GPr  = transform_sample_counts(physeq, function(x) x / sum(x) ) #transform samples based on relative abundance
+GPr = filter_taxa(GPr, function(x) mean(x) > 1e-5, TRUE)
+GenusAll=tax_glom(GPr,"Genus")
+GenusAllOstanaStats<-subset_samples(GenusAll, Sampling_station=="Forest")
+GenusAllOstanaStats<-subset_samples(GenusAllOstanaStats, FFG!="Predator")
+
+ForestData=GenusAll#Change this one so you dont have to rewrite all variables
+#tax_table(ForestData)[,6]
+predictors=t(otu_table(ForestData))
+#head(predictors)[,1:6]
+
+#tax_table(ForestData)[,5:6]
+#head(taxa_names(ForestData))
+#colnames(predictors)<-tax_table(ForestData)[,6]
+#head(predictors)
+response <- as.factor(sample_data(ForestData)$FFG)
+rf.data <- data.frame(response, predictors)
+MozzieForest <- randomForest(response~., data = rf.data, ntree = 1000,importance=TRUE)
+varImpPlot(MozzieForest)
+print(MozzieForest)#returns overall Random Forest results
+imp <- importance(MozzieForest)#all the steps that are imp or imp. are building a dataframe that contains info about the taxa used by the Random Forest testto classify treatment 
+head((imp))
+#(tax_table(ForestData)[,7])<-
+
+predictors<-paste0(tax_table(ForestData)[,6],":")
+
+imp <- data.frame(predictors =tax_table(ForestData)[,6], imp)
+imp <- data.frame(predictors =tax_table(ForestData)[,5], imp)
+imp <- data.frame(predictors =row.names(tax_table(ForestData)), imp)
+
+head(imp)
+imp.sort <- arrange(imp, desc(MeanDecreaseAccuracy))
+#imp.sort$predictors <- factor(imp.sort$predictors, levels = imp.sort$predictors)
+head(imp.sort)
+
+imp.20 <- imp.sort[1:20,]
+imp.20$FamilyGenus<-paste0(imp.20$Family,": ",imp.20$Genus)
+imp.20
+RandomForestFFGMeanAccuracy<-ggplot(imp.20, aes(x = reorder(FamilyGenus,-MeanDecreaseAccuracy), y = MeanDecreaseAccuracy)) +
+  geom_bar(stat = "identity", fill = "indianred") +
+  coord_flip() +xlab("Family: Genus")+ylab("Mean Decrease Accuracy")
+#imp.20$MeanDecreaseGini
+
+dev.off()
+tiff("Figures/FigureSupplmentalRandomForestFFGMeanAccuracyPlot.tiff", width = 3.3, height = 3.3, units = 'in', res = 300)
+RandomForestFFGMeanAccuracy
+dev.off()
+
+otunames <- imp.20$predictors
+r <- rownames(tax_table(ForestData)) %in% otunames
+otunames
+PredictorTable<-kable(tax_table(ForestData)[r, ])#returns a list of the most important predictors for Random Forest Classification
+PredictorTable
+#Top 10 genera for plotting
+imp.10<-imp.20[1:10,]
+imp.10 #
+otunames <- imp.10$predictors
+r <- rownames(tax_table(ForestData)) %in% otunames
+otunames
+PredictorTable<-kable(tax_table(ForestData)[r, ])#returns a list of the most important predictors for Random Forest Classification
+PredictorTable
+
+GenusRandomForestSubset = subset_taxa(GenusAll, row.names(tax_table(GenusAll))%in% otunames)
+GenusRandomForestSubset
+
+df <- psmelt(GenusRandomForestSubset)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Genus", "FFG"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_grid(~Genus)+xlab("Feeding Group")+ylab("Relative Abundance") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Genus,scales = "free_y")+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+scale_fill_manual(values=cbPalette)
+cdataplot
+
+compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr",method="kruskal.test")
+
+Means<-compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr")
+Means
+Means=compare_means(Abundance ~ FFG, data = df, group.by = "Genus", p.adjust.method = "fdr")
+SigList<-length(unique(Trtdata$Genus))
+for (i in levels(Means$Genus)){
+  Tax<-i
+  TaxAbundance<-subset(Means,Genus==i )
+  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+  difference<-TaxAbundance$p.adj
+  names(difference)<-Hyphenated
+  Letters<-multcompLetters(difference)
+  #print(Letters)
+  SigList[i]<-Letters
+  
+}
+vec<-unlist(SigList)
+vec<-vec[-1]
+cdataplot=ggplot(Trtdata, aes(x=FFG,y=mean))+geom_bar(aes(fill = FFG),colour="black", stat="identity")+ facet_wrap(~Genus)+xlab("FFG")+
+  ylab("Relative Abundance (%)") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+
+  geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+geom_text(aes(x=FFG, y=mean+se+2,label=vec))+ scale_fill_manual(values=cbPalette)+
+  theme_set(theme_bw(base_size = 9)+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()))+
+  theme(legend.justification=c(0.05,0.95), legend.position=c(0.64,0.2))+ theme(legend.title = element_blank()) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.key.size = unit(0.35, "cm"))+
+  theme(legend.text = element_text(size = 10))+ theme(legend.background=element_blank())+ theme(axis.title.x=element_blank())
+#scale_x_discrete(labels=c("0 hrs", "24 hrs", "48 hrs","72 hrs"))+ theme(axis.text.x = element_text(angle = 45, hjust = 1))#+ scale_fill_manual(values=cbPalette)
+cdataplot
+
+dev.off()
+tiff("Figures/FigureSupplmentalRandomForestFFGMeanAccuracy.tiff", width = 3.3, height = 3.3, units = 'in', res = 300)
+cdataplot
+dev.off()
+
+###############
+#Supplemental Fig Random Forest Location Mean Decrease Accuracy
+##############
+set.seed(27)
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#000000","#CC79A7","#E12D00")
+theme_set(theme_bw(base_size = 18)+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()))
+biom=import_biom("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\ItalyInvert2018WTax.biom",parseFunction= parse_taxonomy_greengenes)
+
+metadata=read.csv("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\ItalyInvertMetadataWDiversity3.5.2019.csv",header = TRUE)
+head(metadata)
+
+tree=read_tree("C:\\Users\\Joe Receveur\\Documents\\MSU data\\ItalyInverts\\ItalyInvert11.29.18Tree.nwk")
+
+sampdat=sample_data(metadata)
+sample_names(sampdat)=metadata$id
+physeq=merge_phyloseq(biom,sampdat,tree)
+
+
+GPr  = transform_sample_counts(physeq, function(x) x / sum(x) ) #transform samples based on relative abundance
+GPr = filter_taxa(GPr, function(x) mean(x) > 1e-5, TRUE)
+GenusAll=tax_glom(GPr,"Genus")
+
+ForestData=GenusAll#Change this one so you dont have to rewrite all variables
+predictors=t(otu_table(ForestData))
+
+response <- as.factor(sample_data(ForestData)$Sampling_Station)
+rf.data <- data.frame(response, predictors)
+MozzieForest <- randomForest(response~., data = rf.data, ntree = 1000,importance=TRUE)
+varImpPlot(MozzieForest)
+print(MozzieForest)#returns overall Random Forest results
+imp <- importance(MozzieForest)#all the steps that are imp or imp. are building a dataframe that contains info about the taxa used by the Random Forest testto classify treatment 
+head((imp))
+#(tax_table(ForestData)[,7])<-
+
+#predictors<-paste0(tax_table(ForestData)[,6],":")
+
+imp <- data.frame(predictors =tax_table(ForestData)[,6], imp)
+imp <- data.frame(predictors =tax_table(ForestData)[,5], imp)
+imp <- data.frame(predictors =row.names(tax_table(ForestData)), imp)
+
+head(imp)
+imp.sort <- arrange(imp, desc(MeanDecreaseAccuracy))
+#imp.sort$predictors <- factor(imp.sort$predictors, levels = imp.sort$predictors)
+head(imp.sort)
+
+imp.20 <- imp.sort[1:20,]
+imp.20$FamilyGenus<-paste0(imp.20$Family,": ",imp.20$Genus)
+imp.20
+RandomForestStationMeanAccuracy<-ggplot(imp.20, aes(x = reorder(FamilyGenus,-MeanDecreaseAccuracy), y = MeanDecreaseAccuracy)) +
+  geom_bar(stat = "identity", fill = "indianred") +
+  coord_flip() +xlab("Family: Genus")+ylab("Mean Decrease Accuracy")
+#imp.20$MeanDecreaseGini
+theme_set(theme_bw(base_size = 8)+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()))
+
+dev.off()
+tiff("Figures/FigureSupplmentalRandomForestLocationMeanAccuracyPlot.tiff", width = 3.3, height = 3.3, units = 'in', res = 300)
+RandomForestStationMeanAccuracy
+dev.off()
+
+otunames <- imp.20$predictors
+r <- rownames(tax_table(ForestData)) %in% otunames
+otunames
+PredictorTable<-kable(tax_table(ForestData)[r, ])#returns a list of the most important predictors for Random Forest Classification
+PredictorTable
+#Top 10 genera for plotting
+imp.10<-imp.20[1:10,]
+imp.10 #
+otunames <- imp.10$predictors
+r <- rownames(tax_table(ForestData)) %in% otunames
+otunames
+PredictorTable<-kable(tax_table(ForestData)[r, ])#returns a list of the most important predictors for Random Forest Classification
+PredictorTable
+
+GenusRandomForestSubset = subset_taxa(GenusAll, row.names(tax_table(GenusAll))%in% otunames)
+GenusRandomForestSubset
+
+df <- psmelt(GenusRandomForestSubset)
+df$Abundance=df$Abundance*100
+Trtdata <- ddply(df, c("Genus", "Sampling_station"), summarise,
+                 N    = length(Abundance),
+                 mean = mean(Abundance),
+                 sd   = sd(Abundance),
+                 se   = sd / sqrt(N)
+)
+cdataplot=ggplot(Trtdata, aes(x=Sampling_station,y=mean))+geom_bar(aes(fill = Sampling_station),colour="black", stat="identity")+ facet_grid(~Genus)+xlab("Sampling Station")+
+  ylab("Relative Abundance") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+facet_wrap(~Genus,scales = "free_y")+geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+scale_fill_manual(values=cbPalette)
+cdataplot
+
+compare_means(Abundance ~ Sampling_station, data = df, group.by = "Genus", p.adjust.method = "fdr",method="kruskal.test")
+
+Means<-compare_means(Abundance ~ Sampling_station, data = df, group.by = "Genus", p.adjust.method = "fdr")
+Means
+Means=compare_means(Abundance ~ Sampling_station, data = df, group.by = "Genus", p.adjust.method = "fdr")
+SigList<-length(unique(Trtdata$Genus))
+for (i in levels(Means$Genus)){
+  Tax<-i
+  TaxAbundance<-subset(Means,Genus==i )
+  Hyphenated<-as.character(paste0(TaxAbundance$group1,"-",TaxAbundance$group2))
+  difference<-TaxAbundance$p.adj
+  names(difference)<-Hyphenated
+  Letters<-multcompLetters(difference)
+  #print(Letters)
+  SigList[i]<-Letters
+  
+}
+vec<-unlist(SigList)
+vec<-vec[-1]
+cdataplot=ggplot(Trtdata, aes(x=Sampling_station,y=mean))+geom_bar(aes(fill = Sampling_station),colour="black", stat="identity")+ facet_wrap(~Genus)+xlab("Sampling Station")+
+  ylab("Relative Abundance (%)") + theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.title.x=element_blank())+
+  geom_errorbar(aes(ymin=mean-se,ymax=mean+se))+geom_text(aes(x=Sampling_station, y=mean+se+2,label=vec))+ scale_fill_manual(values=cbPalette)+
+  theme_set(theme_bw(base_size = 9)+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()))+
+  theme(legend.justification=c(0.05,0.95), legend.position=c(0.64,0.2))+ theme(legend.title = element_blank()) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.key.size = unit(0.35, "cm"))+
+  theme(legend.text = element_text(size = 10))+ theme(legend.background=element_blank())+ theme(axis.title.x=element_blank())
+#scale_x_discrete(labels=c("0 hrs", "24 hrs", "48 hrs","72 hrs"))+ theme(axis.text.x = element_text(angle = 45, hjust = 1))#+ scale_fill_manual(values=cbPalette)
+cdataplot
+
+dev.off()
+tiff("Figures/FigureSupplmentalRandomForestSampling_StationMeanAccuracy.tiff", width = 3.3, height = 3.3, units = 'in', res = 300)
+cdataplot
+dev.off()
